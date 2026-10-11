@@ -1,7 +1,12 @@
 import React, { useState, useEffect } from 'react';
-import { Menu, X, Zap, Volume2, VolumeX, Flame } from 'lucide-react';
+import { Menu, X, Phone, MessageCircle, Volume2, VolumeX } from 'lucide-react';
 
-export default function Navbar({ onOpenTrial }) {
+const GYM_PHONE = '919137195858'; // country code + number, no "+" and no spaces
+const JOIN_LINK = `https://wa.me/${GYM_PHONE}?text=${encodeURIComponent(
+  'Hi! I want to join Growth Fitness. Can you share the membership details?'
+)}`;
+
+export default function Navbar() {
   const [scrolled, setScrolled] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [soundEnabled, setSoundEnabled] = useState(false);
@@ -15,13 +20,8 @@ export default function Navbar({ onOpenTrial }) {
   }, []);
 
   const navLinks = [
-    { name: '3D Equipment', href: '#equipment-3d' },
     { name: 'Facility Tour', href: '#facility' },
-    { name: 'Target Muscles', href: '#muscle-target' },
-    { name: 'Programs', href: '#programs' },
-    { name: 'Transformations', href: '#transformations' },
-    { name: 'BMI Calculator', href: '#calculator' },
-    { name: 'Pricing', href: '#pricing' },
+    { name: 'Dance Studio', href: '#studio' },
   ];
 
   return (
@@ -38,12 +38,12 @@ export default function Navbar({ onOpenTrial }) {
         </a>
 
         {/* Desktop Nav */}
-        <nav className="hidden lg:flex items-center gap-7 glass-panel px-6 py-2.5 rounded-full border-white/10">
+        <nav className="hidden lg:flex items-center gap-8 glass-panel px-6 py-2.5 rounded-full border-white/10">
           {navLinks.map((link) => (
             <a
               key={link.name}
               href={link.href}
-              className="text-xs font-extrabold uppercase tracking-wider text-gray-300 hover:text-[#ff1e27] transition-colors"
+              className="text-xs font-extrabold uppercase tracking-wider text-gray-300 hover:text-[#ff1e27] transition-colors whitespace-nowrap"
             >
               {link.name}
             </a>
@@ -60,13 +60,24 @@ export default function Navbar({ onOpenTrial }) {
             {soundEnabled ? <Volume2 className="w-5 h-5 text-[#ff1e27]" /> : <VolumeX className="w-5 h-5" />}
           </button>
 
-          <button
-            onClick={onOpenTrial}
+          <a
+            href={`tel:+${GYM_PHONE}`}
+            aria-label="Call Growth Fitness"
+            title="Call us"
+            className="p-2.5 rounded-xl glass-panel text-gray-300 hover:text-[#ff1e27] hover:border-[#ff1e27] transition-all"
+          >
+            <Phone className="w-5 h-5" />
+          </a>
+
+          <a
+            href={JOIN_LINK}
+            target="_blank"
+            rel="noopener noreferrer"
             className="px-6 py-2.5 bg-gradient-to-r from-[#ff1e27] to-[#ff4b2b] text-white font-extrabold text-xs uppercase tracking-wider rounded-xl hover:shadow-[0_0_25px_rgba(255,30,39,0.6)] transition-all flex items-center gap-2"
           >
-            <Zap className="w-4 h-4 fill-white" />
-            <span>FREE PASS</span>
-          </button>
+            <MessageCircle className="w-4 h-4 fill-white" />
+            <span>JOIN US</span>
+          </a>
         </div>
 
         {/* Mobile Menu Toggle */}
@@ -91,16 +102,24 @@ export default function Navbar({ onOpenTrial }) {
               {link.name}
             </a>
           ))}
-          <button
-            onClick={() => {
-              setMobileMenuOpen(false);
-              onOpenTrial();
-            }}
+          <a
+            href={JOIN_LINK}
+            target="_blank"
+            rel="noopener noreferrer"
+            onClick={() => setMobileMenuOpen(false)}
             className="w-full py-4 bg-gradient-to-r from-[#ff1e27] to-[#ff4b2b] text-white font-extrabold text-center uppercase tracking-wider rounded-xl hover:shadow-[0_0_25px_rgba(255,30,39,0.5)] mt-2 flex items-center justify-center gap-2"
           >
-            <Zap className="w-5 h-5 fill-white" />
-            <span>CLAIM FREE 7-DAY PASS</span>
-          </button>
+            <MessageCircle className="w-5 h-5 fill-white" />
+            <span>JOIN US</span>
+          </a>
+          <a
+            href={`tel:+${GYM_PHONE}`}
+            onClick={() => setMobileMenuOpen(false)}
+            className="w-full py-4 glass-panel text-white font-extrabold text-center uppercase tracking-wider rounded-xl flex items-center justify-center gap-2"
+          >
+            <Phone className="w-5 h-5" />
+            <span>CALL NOW</span>
+          </a>
         </div>
       )}
     </header>

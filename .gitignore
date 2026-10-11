@@ -1,0 +1,8 @@
+# dependencies and build output (created again by npm install / npm run build)
+node_modules
+dist
+
+# editor and system files
+.DS_Store
+.vscode
+*.log
