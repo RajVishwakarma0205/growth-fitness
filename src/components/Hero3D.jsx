@@ -222,7 +222,7 @@ export default function Hero3D() {
       {/* WebP Image Sequence Canvas */}
       <canvas
         ref={canvasRef}
-        className="w-full h-full block touch-none select-none"
+        className="w-full h-full block select-none"
       />
     </div>
   );
