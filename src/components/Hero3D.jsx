@@ -4,11 +4,12 @@ import { ScrollTrigger } from 'gsap/ScrollTrigger';
 
 gsap.registerPlugin(ScrollTrigger);
 
-const TOTAL_FRAMES = 192; // frame files on disk: frame_001.webp ... frame_192.webp
+const DESKTOP_FRAMES = { dir: 'frames', total: 192 }; // public/frames/frame_001.webp ... frame_192.webp
 const READY_COUNT = 24; // the hero appears as soon as this many frames are loaded
+const BASE = import.meta.env.BASE_URL;
 
-const frameUrl = (fileNumber) =>
-  `${import.meta.env.BASE_URL}frames/frame_${String(fileNumber).padStart(3, '0')}.webp`;
+const frameUrl = (dir, fileNumber) =>
+  `${BASE}${dir}/frame_${String(fileNumber).padStart(3, '0')}.webp`;
 
 export default function Hero3D() {
   const containerRef = useRef(null);
@@ -23,163 +24,191 @@ export default function Hero3D() {
     if (!canvas || !container) return;
 
     const ctx = canvas.getContext('2d');
-
-    // On phones use every 2nd frame: half the download, still smooth
     const isMobile = window.matchMedia('(max-width: 767px)').matches;
-    const step = isMobile ? 2 : 1;
-    const frameCount = Math.ceil(TOTAL_FRAMES / step);
-    const readyCount = Math.min(READY_COUNT, frameCount);
-    const maxDpr = isMobile ? 1.5 : 2;
 
-    const images = new Array(frameCount);
-    const loadedFlags = new Array(frameCount).fill(false);
+    let stopped = false;
+    let teardown = null;
 
-    let cancelled = false;
-    let started = false;
-    let failed = false;
-    let animationFrameId;
-    let targetFrame = 0;
-    let currentFrame = 0;
-    let st;
+    // Everything about the animation. `dir` is the folder, `total` is how many frames it has.
+    const init = ({ dir, total }) => {
+      // On phones use every 2nd frame: half the download, still smooth
+      const step = isMobile ? 2 : 1;
+      const frameCount = Math.ceil(total / step);
+      const readyCount = Math.min(READY_COUNT, frameCount);
+      const maxDpr = isMobile ? 1.5 : 2;
 
-    let firstSettled = 0;
-    let firstLoaded = 0;
-    let firstFailedUrl = null;
+      const images = new Array(frameCount);
+      const loadedFlags = new Array(frameCount).fill(false);
 
-    // Finds the closest frame that has already loaded, so the canvas is never blank
-    const getImage = (idx) => {
-      for (let k = idx; k >= 0; k--) if (loadedFlags[k]) return images[k];
-      for (let k = idx + 1; k < frameCount; k++) if (loadedFlags[k]) return images[k];
-      return null;
-    };
+      let cancelled = false;
+      let started = false;
+      let failed = false;
+      let animationFrameId;
+      let targetFrame = 0;
+      let currentFrame = 0;
+      let st;
 
-    // Draw a frame on the canvas, filling the screen (like object-fit: cover)
-    const renderFrame = (frameIndex) => {
-      const img = getImage(frameIndex);
-      if (!img) return;
+      let firstSettled = 0;
+      let firstLoaded = 0;
+      let firstFailedUrl = null;
 
-      const cWidth = canvas.width;
-      const cHeight = canvas.height;
-      const imgAspect = img.naturalWidth / img.naturalHeight;
-      const canvasAspect = cWidth / cHeight;
-
-      let renderW, renderH, xOffset, yOffset;
-
-      if (canvasAspect > imgAspect) {
-        renderW = cWidth;
-        renderH = cWidth / imgAspect;
-        xOffset = 0;
-        yOffset = (cHeight - renderH) / 2;
-      } else {
-        renderW = cHeight * imgAspect;
-        renderH = cHeight;
-        xOffset = (cWidth - renderW) / 2;
-        yOffset = 0;
-      }
-
-      ctx.clearRect(0, 0, cWidth, cHeight);
-      ctx.drawImage(img, xOffset, yOffset, renderW, renderH);
-    };
-
-    const resizeCanvas = () => {
-      const dpr = Math.min(window.devicePixelRatio || 1, maxDpr);
-      canvas.width = window.innerWidth * dpr;
-      canvas.height = window.innerHeight * dpr;
-      renderFrame(Math.round(currentFrame));
-    };
-
-    // Smooth lerp loop for forward and reverse scrubbing
-    const animLoop = () => {
-      const diff = targetFrame - currentFrame;
-      if (Math.abs(diff) > 0.01) {
-        currentFrame += diff * 0.15;
-        renderFrame(Math.min(frameCount - 1, Math.max(0, Math.round(currentFrame))));
-      }
-      animationFrameId = requestAnimationFrame(animLoop);
-    };
-
-    // Pin the hero and map scroll position to a frame
-    const initScrollTrigger = () => {
-      st = ScrollTrigger.create({
-        trigger: container,
-        start: 'top top',
-        end: '+=250%',
-        pin: true,
-        scrub: 0.5,
-        refreshPriority: 1, // measure the hero first so later pinned sections start in the right place
-        onUpdate: (self) => {
-          const frameIdx = Math.floor(self.progress * (frameCount - 1));
-          targetFrame = Math.min(frameCount - 1, Math.max(0, frameIdx));
-        },
-      });
-      // Recalculate every trigger now that the hero's pin spacing exists
-      ScrollTrigger.refresh();
-    };
-
-    // Load one frame. First-batch frames decide when the hero can appear.
-    const loadFrame = (i, isFirstBatch) => {
-      const img = new Image();
-      img.onload = () => {
-        if (cancelled) return;
-        loadedFlags[i] = true;
-        // If the visitor is sitting on this exact frame, draw it now
-        if (started && i === Math.round(currentFrame)) renderFrame(i);
-        if (isFirstBatch) settle(true);
+      // Finds the closest frame that has already loaded, so the canvas is never blank
+      const getImage = (idx) => {
+        for (let k = idx; k >= 0; k--) if (loadedFlags[k]) return images[k];
+        for (let k = idx + 1; k < frameCount; k++) if (loadedFlags[k]) return images[k];
+        return null;
       };
-      img.onerror = () => {
-        if (cancelled) return;
-        if (!firstFailedUrl) firstFailedUrl = img.src;
-        if (isFirstBatch) settle(false);
-      };
-      img.src = frameUrl(i * step + 1);
-      images[i] = img;
-    };
 
-    const start = () => {
-      started = true;
-      setIsLoaded(true);
-      resizeCanvas();
-      animLoop();
-      initScrollTrigger();
-      // Now load all the remaining frames quietly in the background
-      for (let i = readyCount; i < frameCount; i++) loadFrame(i, false);
-    };
+      // Draw a frame on the canvas, filling the screen (like object-fit: cover)
+      const renderFrame = (frameIndex) => {
+        const img = getImage(frameIndex);
+        if (!img) return;
 
-    const settle = (ok) => {
-      if (cancelled || started || failed) return;
-      firstSettled++;
-      if (ok) firstLoaded++;
-      setLoadingProgress(Math.round((firstSettled / readyCount) * 100));
+        const cWidth = canvas.width;
+        const cHeight = canvas.height;
+        const imgAspect = img.naturalWidth / img.naturalHeight;
+        const canvasAspect = cWidth / cHeight;
 
-      if (firstSettled === readyCount) {
-        if (firstLoaded === 0) {
-          // Nothing loaded at all: show a clear message instead of a spinner
-          console.error('[Hero3D] No frames could be loaded. First failed URL:', firstFailedUrl);
-          failed = true;
-          setFailedUrl(firstFailedUrl);
+        let renderW, renderH, xOffset, yOffset;
+
+        if (canvasAspect > imgAspect) {
+          renderW = cWidth;
+          renderH = cWidth / imgAspect;
+          xOffset = 0;
+          yOffset = (cHeight - renderH) / 2;
         } else {
-          start();
+          renderW = cHeight * imgAspect;
+          renderH = cHeight;
+          xOffset = (cWidth - renderW) / 2;
+          yOffset = 0;
         }
-      }
+
+        ctx.clearRect(0, 0, cWidth, cHeight);
+        ctx.drawImage(img, xOffset, yOffset, renderW, renderH);
+      };
+
+      const resizeCanvas = () => {
+        const dpr = Math.min(window.devicePixelRatio || 1, maxDpr);
+        canvas.width = window.innerWidth * dpr;
+        canvas.height = window.innerHeight * dpr;
+        renderFrame(Math.round(currentFrame));
+      };
+
+      // Smooth lerp loop for forward and reverse scrubbing
+      const animLoop = () => {
+        const diff = targetFrame - currentFrame;
+        if (Math.abs(diff) > 0.01) {
+          currentFrame += diff * 0.15;
+          renderFrame(Math.min(frameCount - 1, Math.max(0, Math.round(currentFrame))));
+        }
+        animationFrameId = requestAnimationFrame(animLoop);
+      };
+
+      // Pin the hero and map scroll position to a frame
+      const initScrollTrigger = () => {
+        st = ScrollTrigger.create({
+          trigger: container,
+          start: 'top top',
+          end: '+=250%',
+          pin: true,
+          scrub: 0.5,
+          refreshPriority: 1, // measure the hero first so later pinned sections start in the right place
+          onUpdate: (self) => {
+            const frameIdx = Math.floor(self.progress * (frameCount - 1));
+            targetFrame = Math.min(frameCount - 1, Math.max(0, frameIdx));
+          },
+        });
+        // Recalculate every trigger now that the hero's pin spacing exists
+        ScrollTrigger.refresh();
+      };
+
+      // Load one frame. First-batch frames decide when the hero can appear.
+      const loadFrame = (i, isFirstBatch) => {
+        const img = new Image();
+        img.onload = () => {
+          if (cancelled) return;
+          loadedFlags[i] = true;
+          // If the visitor is sitting on this exact frame, draw it now
+          if (started && i === Math.round(currentFrame)) renderFrame(i);
+          if (isFirstBatch) settle(true);
+        };
+        img.onerror = () => {
+          if (cancelled) return;
+          if (!firstFailedUrl) firstFailedUrl = img.src;
+          if (isFirstBatch) settle(false);
+        };
+        img.src = frameUrl(dir, i * step + 1);
+        images[i] = img;
+      };
+
+      const start = () => {
+        started = true;
+        setIsLoaded(true);
+        resizeCanvas();
+        animLoop();
+        initScrollTrigger();
+        // Now load all the remaining frames quietly in the background
+        for (let i = readyCount; i < frameCount; i++) loadFrame(i, false);
+      };
+
+      const settle = (ok) => {
+        if (cancelled || started || failed) return;
+        firstSettled++;
+        if (ok) firstLoaded++;
+        setLoadingProgress(Math.round((firstSettled / readyCount) * 100));
+
+        if (firstSettled === readyCount) {
+          if (firstLoaded === 0) {
+            // Nothing loaded at all: show a clear message instead of a spinner
+            console.error('[Hero3D] No frames could be loaded. First failed URL:', firstFailedUrl);
+            failed = true;
+            setFailedUrl(firstFailedUrl);
+          } else {
+            start();
+          }
+        }
+      };
+
+      // Step 1: load only the first batch
+      for (let i = 0; i < readyCount; i++) loadFrame(i, true);
+
+      window.addEventListener('resize', resizeCanvas);
+
+      return () => {
+        cancelled = true;
+        window.removeEventListener('resize', resizeCanvas);
+        cancelAnimationFrame(animationFrameId);
+        // Only kill this section's trigger, not every trigger on the page
+        if (st) st.kill();
+        images.forEach((img) => {
+          if (img) {
+            img.onload = null;
+            img.onerror = null;
+          }
+        });
+      };
     };
 
-    // Step 1: load only the first batch
-    for (let i = 0; i < readyCount; i++) loadFrame(i, true);
-
-    window.addEventListener('resize', resizeCanvas);
+    if (isMobile) {
+      // Phones: use the vertical frames if they exist, otherwise fall back to the normal ones
+      fetch(`${BASE}frames-mobile/manifest.json`)
+        .then((res) => (res.ok ? res.json() : null))
+        .then((manifest) => {
+          if (stopped) return;
+          const ok = manifest && Number.isInteger(manifest.count) && manifest.count > 0;
+          teardown = init(ok ? { dir: 'frames-mobile', total: manifest.count } : DESKTOP_FRAMES);
+        })
+        .catch(() => {
+          if (stopped) return;
+          teardown = init(DESKTOP_FRAMES);
+        });
+    } else {
+      teardown = init(DESKTOP_FRAMES);
+    }
 
     return () => {
-      cancelled = true;
-      window.removeEventListener('resize', resizeCanvas);
-      cancelAnimationFrame(animationFrameId);
-      // Only kill this section's trigger, not every trigger on the page
-      if (st) st.kill();
-      images.forEach((img) => {
-        if (img) {
-          img.onload = null;
-          img.onerror = null;
-        }
-      });
+      stopped = true;
+      if (teardown) teardown();
     };
   }, []);
 
@@ -195,7 +224,7 @@ export default function Hero3D() {
           <p className="text-white/70 max-w-xl mb-2">
             The browser could not load the animation frames. Make sure the folder
             <span className="text-white font-semibold"> public/frames </span>
-            exists and contains frame_001.webp to frame_192.webp.
+            exists and contains the .webp frame files.
           </p>
           <p className="text-white/50 text-sm break-all max-w-xl">
             Tried to load: {failedUrl}
